@@ -1,1 +1,338 @@
-<h1>ilkeäää</h1>
+<!DOCTYPE html>
+<html lang="fi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nyan Kissa Avaruudessa</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at top, #2d225a 0%, #0d0b2a 45%, #05030f 100%);
+        color: #f5f3ff;
+        padding: 24px;
+        gap: 16px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 2.2rem;
+        letter-spacing: 1px;
+      }
+
+      .hud {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+      }
+
+      .hud span {
+        background: rgba(255, 255, 255, 0.08);
+        padding: 6px 12px;
+        border-radius: 999px;
+      }
+
+      canvas {
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        border-radius: 16px;
+        background: linear-gradient(160deg, rgba(8, 10, 36, 0.7), rgba(6, 6, 18, 0.85));
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+        max-width: min(90vw, 720px);
+        width: 720px;
+        height: 420px;
+      }
+
+      .controls {
+        text-align: center;
+        max-width: 720px;
+        font-size: 0.95rem;
+        line-height: 1.5;
+        color: #d1cfff;
+      }
+
+      button {
+        background: #ff8bd5;
+        color: #1b082a;
+        border: none;
+        border-radius: 999px;
+        padding: 10px 18px;
+        font-weight: 700;
+        cursor: pointer;
+        box-shadow: 0 6px 18px rgba(255, 139, 213, 0.45);
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Nyan Kissa Avaruudessa</h1>
+    <div class="hud">
+      <span id="score">Pisteet: 0</span>
+      <span id="best">Ennätys: 0</span>
+      <button id="restart">Aloita alusta</button>
+    </div>
+    <canvas id="game" width="720" height="420" aria-label="Nyan-kissa väistelee asteroideja"></canvas>
+    <div class="controls">
+      Liiku nuolinäppäimillä tai WASD:llä. Vältä asteroideja ja kerää
+      mahdollisimman paljon pisteitä lentäessäsi avaruudessa!
+    </div>
+
+    <script>
+      const canvas = document.getElementById("game");
+      const context = canvas.getContext("2d");
+      const scoreLabel = document.getElementById("score");
+      const bestLabel = document.getElementById("best");
+      const restartButton = document.getElementById("restart");
+
+      const starCount = 80;
+      const stars = Array.from({ length: starCount }, () => ({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        size: 1 + Math.random() * 2,
+        speed: 0.3 + Math.random() * 0.8,
+      }));
+
+      const cat = {
+        x: canvas.width * 0.2,
+        y: canvas.height * 0.5,
+        width: 54,
+        height: 30,
+        speed: 4,
+      };
+
+      const keys = new Set();
+      let score = 0;
+      let bestScore = 0;
+      let asteroids = [];
+      let gameOver = false;
+      let spawnTimer = 0;
+
+      const nyanTrail = [];
+
+      const rainbowColors = ["#ff4b5c", "#ffb26b", "#ffe66d", "#87f3a1", "#6fa8ff", "#c77dff"];
+
+      function resetGame() {
+        score = 0;
+        asteroids = [];
+        gameOver = false;
+        spawnTimer = 0;
+        cat.x = canvas.width * 0.2;
+        cat.y = canvas.height * 0.5;
+        nyanTrail.length = 0;
+      }
+
+      function updateScore() {
+        scoreLabel.textContent = `Pisteet: ${Math.floor(score)}`;
+        bestLabel.textContent = `Ennätys: ${Math.floor(bestScore)}`;
+      }
+
+      function spawnAsteroid() {
+        const size = 26 + Math.random() * 30;
+        asteroids.push({
+          x: canvas.width + size,
+          y: 40 + Math.random() * (canvas.height - 80),
+          size,
+          speed: 2 + Math.random() * 2.5,
+          rotation: Math.random() * Math.PI,
+          rotationSpeed: (Math.random() - 0.5) * 0.08,
+        });
+      }
+
+      function updateCat() {
+        if (keys.has("ArrowUp") || keys.has("w")) {
+          cat.y -= cat.speed;
+        }
+        if (keys.has("ArrowDown") || keys.has("s")) {
+          cat.y += cat.speed;
+        }
+        if (keys.has("ArrowLeft") || keys.has("a")) {
+          cat.x -= cat.speed;
+        }
+        if (keys.has("ArrowRight") || keys.has("d")) {
+          cat.x += cat.speed;
+        }
+
+        cat.x = Math.max(20, Math.min(canvas.width - cat.width - 20, cat.x));
+        cat.y = Math.max(20, Math.min(canvas.height - cat.height - 20, cat.y));
+      }
+
+      function updateAsteroids() {
+        asteroids.forEach((asteroid) => {
+          asteroid.x -= asteroid.speed;
+          asteroid.rotation += asteroid.rotationSpeed;
+        });
+        asteroids = asteroids.filter((asteroid) => asteroid.x + asteroid.size > 0);
+      }
+
+      function updateTrail() {
+        nyanTrail.push({
+          x: cat.x - 4,
+          y: cat.y + cat.height / 2,
+        });
+        if (nyanTrail.length > 30) {
+          nyanTrail.shift();
+        }
+      }
+
+      function checkCollisions() {
+        for (const asteroid of asteroids) {
+          const padding = 6;
+          const hit =
+            cat.x + padding < asteroid.x + asteroid.size &&
+            cat.x + cat.width - padding > asteroid.x &&
+            cat.y + padding < asteroid.y + asteroid.size &&
+            cat.y + cat.height - padding > asteroid.y;
+          if (hit) {
+            gameOver = true;
+          }
+        }
+      }
+
+      function drawStars() {
+        context.fillStyle = "#ffffff";
+        stars.forEach((star) => {
+          context.globalAlpha = 0.6 + star.size * 0.2;
+          context.beginPath();
+          context.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+          context.fill();
+          star.x -= star.speed;
+          if (star.x < 0) {
+            star.x = canvas.width + Math.random() * 40;
+            star.y = Math.random() * canvas.height;
+          }
+        });
+        context.globalAlpha = 1;
+      }
+
+      function drawTrail() {
+        nyanTrail.forEach((segment, index) => {
+          const color = rainbowColors[index % rainbowColors.length];
+          const width = 8 - index * 0.15;
+          context.fillStyle = color;
+          context.fillRect(segment.x - index * 1.2, segment.y - 10, Math.max(width, 2), 20);
+        });
+      }
+
+      function drawCat() {
+        context.save();
+        context.translate(cat.x, cat.y);
+
+        context.fillStyle = "#8dd7ff";
+        context.fillRect(0, 8, cat.width - 18, cat.height - 10);
+
+        context.fillStyle = "#ffb3c8";
+        context.fillRect(24, 4, 26, 22);
+
+        context.fillStyle = "#1a1a2e";
+        context.fillRect(32, 10, 4, 4);
+        context.fillRect(40, 10, 4, 4);
+        context.fillStyle = "#ff4b5c";
+        context.fillRect(36, 16, 4, 3);
+
+        context.fillStyle = "#fce38a";
+        context.fillRect(8, 16, 8, 6);
+
+        context.fillStyle = "#ffb3c8";
+        context.beginPath();
+        context.moveTo(44, 4);
+        context.lineTo(54, 2);
+        context.lineTo(52, 12);
+        context.closePath();
+        context.fill();
+
+        context.restore();
+      }
+
+      function drawAsteroid(asteroid) {
+        context.save();
+        context.translate(asteroid.x + asteroid.size / 2, asteroid.y + asteroid.size / 2);
+        context.rotate(asteroid.rotation);
+        context.fillStyle = "#8b7b6e";
+        context.beginPath();
+        context.moveTo(asteroid.size * 0.2, -asteroid.size * 0.4);
+        context.lineTo(asteroid.size * 0.5, -asteroid.size * 0.2);
+        context.lineTo(asteroid.size * 0.45, asteroid.size * 0.3);
+        context.lineTo(asteroid.size * 0.1, asteroid.size * 0.4);
+        context.lineTo(-asteroid.size * 0.4, asteroid.size * 0.1);
+        context.lineTo(-asteroid.size * 0.5, -asteroid.size * 0.1);
+        context.closePath();
+        context.fill();
+        context.restore();
+      }
+
+      function drawGameOver() {
+        context.fillStyle = "rgba(10, 8, 26, 0.7)";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = "#fff";
+        context.font = "bold 32px Trebuchet MS";
+        context.fillText("Peli ohi!", canvas.width / 2 - 80, canvas.height / 2 - 10);
+        context.font = "16px Trebuchet MS";
+        context.fillText("Paina Enter tai klikkaa Aloita alusta.", canvas.width / 2 - 150, canvas.height / 2 + 20);
+      }
+
+      function gameLoop() {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        drawStars();
+        drawTrail();
+        drawCat();
+        asteroids.forEach(drawAsteroid);
+
+        if (!gameOver) {
+          updateCat();
+          updateAsteroids();
+          updateTrail();
+          checkCollisions();
+          score += 0.1;
+          spawnTimer += 1;
+
+          if (spawnTimer > 40) {
+            spawnAsteroid();
+            spawnTimer = 0;
+          }
+
+          if (score > bestScore) {
+            bestScore = score;
+          }
+        } else {
+          drawGameOver();
+        }
+
+        updateScore();
+        requestAnimationFrame(gameLoop);
+      }
+
+      document.addEventListener("keydown", (event) => {
+        keys.add(event.key);
+        if (gameOver && event.key === "Enter") {
+          resetGame();
+        }
+      });
+
+      document.addEventListener("keyup", (event) => {
+        keys.delete(event.key);
+      });
+
+      restartButton.addEventListener("click", resetGame);
+
+      gameLoop();
+    </script>
+  </body>
+</html>
